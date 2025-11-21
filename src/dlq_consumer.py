@@ -47,6 +47,8 @@ class DLQConsumer:
                     dlq_data = json.loads(msg.value().decode('utf-8'))
                     message_count += 1
                     
+                    order_data = dlq_data.get('order_data')
+                    
                     logger.warning("=" * 60)
                     logger.warning(f"DLQ Message #{message_count}")
                     logger.warning(f"Original Topic: {dlq_data.get('original_topic')}")
@@ -56,6 +58,16 @@ class DLQConsumer:
                     logger.warning(f"Error Reason: {dlq_data.get('error_reason')}")
                     logger.warning(f"Retry Count: {dlq_data.get('retry_count')}")
                     logger.warning(f"Timestamp: {dlq_data.get('timestamp')}")
+                    
+                    # Log order details if available
+                    if order_data:
+                        logger.warning("--- Order Details ---")
+                        logger.warning(f"Order ID: {order_data.get('orderId')}")
+                        logger.warning(f"Product: {order_data.get('product')}")
+                        logger.warning(f"Price: ${order_data.get('price')}")
+                    else:
+                        logger.warning("Order Data: Not available (deserialization failed)")
+                    
                     logger.warning("=" * 60)
                     
                 except Exception as e:

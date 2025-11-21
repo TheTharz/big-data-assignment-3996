@@ -63,17 +63,19 @@ class OrderConsumer:
         logger.info(f"Consumer initialized. Group ID: {CONSUMER_GROUP_ID}")
         logger.info(f"Subscribing to topic: {self.orders_topic}")
     
-    def send_to_dlq(self, message, error_reason: str):
+    def send_to_dlq(self, message, error_reason: str, order_data: Optional[Dict[str, Any]] = None):
         try:
+            message_key = message.key().decode('utf-8') if message.key() else None
+            
             dlq_payload = {
                 'original_topic': message.topic(),
                 'partition': message.partition(),
                 'offset': message.offset(),
-                'key': message.key().decode('utf-8') if message.key() else None,
-                'value': message.value(),
+                'key': message_key,
+                'order_data': order_data,  # Include the deserialized order
                 'error_reason': error_reason,
                 'timestamp': time.time(),
-                'retry_count': self.retry_counts.get(message.key().decode('utf-8'), 0)
+                'retry_count': self.retry_counts.get(message_key, 0)
             }
             
             self.dlq_producer.produce(
@@ -124,33 +126,42 @@ class OrderConsumer:
             )
             order = self.avro_deserializer(msg.value(), serialization_context)
             
-            success = self.process_message(order)
-            
-            if success:
-                self.retry_counts.pop(message_key, None)
-                return True
-            else:
-                self.retry_counts[message_key] += 1
+            for attempt in range(MAX_RETRY_ATTEMPTS):
+                success = self.process_message(order)
                 
-                if self.retry_counts[message_key] < MAX_RETRY_ATTEMPTS:
-                    backoff = RETRY_BACKOFF_MS * (2 ** (self.retry_counts[message_key] - 1))
+                if success:
+                    self.retry_counts.pop(message_key, None)
+                    return True
+                
+                self.retry_counts[message_key] = attempt + 1
+                
+                if attempt < MAX_RETRY_ATTEMPTS - 1:
+                    backoff = RETRY_BACKOFF_MS * (2 ** attempt)
                     logger.warning(
-                        f"Retry {self.retry_counts[message_key]}/{MAX_RETRY_ATTEMPTS} "
+                        f"Retry {attempt + 1}/{MAX_RETRY_ATTEMPTS} "
                         f"for message {message_key}. Waiting {backoff}ms"
                     )
                     time.sleep(backoff / 1000.0)
-                    return False
-                else:
-                    self.send_to_dlq(msg, "Max retry attempts exceeded")
-                    self.retry_counts.pop(message_key, None)
-                    return True
+            
+            # All retries exhausted, send to DLQ
+            logger.error(f"Max retry attempts ({MAX_RETRY_ATTEMPTS}) exceeded for message {message_key}")
+            self.send_to_dlq(msg, "Max retry attempts exceeded - processing failed", order_data=order)
+            self.retry_counts.pop(message_key, None)
+            return True
         
         except Exception as e:
             logger.error(f"Error handling message {message_key}: {e}")
             self.retry_counts[message_key] += 1
             
             if self.retry_counts[message_key] >= MAX_RETRY_ATTEMPTS:
-                self.send_to_dlq(msg, f"Deserialization/Processing error: {str(e)}")
+                # Try to deserialize if possible, otherwise send None
+                order_data = None
+                try:
+                    serialization_context = SerializationContext(msg.topic(), MessageField.VALUE)
+                    order_data = self.avro_deserializer(msg.value(), serialization_context)
+                except:
+                    pass
+                self.send_to_dlq(msg, f"Deserialization/Processing error: {str(e)}", order_data=order_data)
                 self.retry_counts.pop(message_key, None)
                 return True
             

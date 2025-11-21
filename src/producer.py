@@ -63,10 +63,15 @@ class OrderProducer:
         products = ['Laptop', 'Smartphone', 'Tablet', 'Headphones', 'Monitor', 
                    'Keyboard', 'Mouse', 'Webcam', 'Smartwatch', 'Speaker']
         
+        if random.random() < 0.3:
+            price = round(random.uniform(-100.0, -0.01), 2)
+        else:
+            price = round(random.uniform(10.0, 2000.0), 2) 
+
         order = {
             'orderId': str(order_id),
             'product': random.choice(products),
-            'price': round(random.uniform(10.0, 2000.0), 2)
+            'price': price
         }
         
         return order
