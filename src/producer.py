@@ -49,4 +49,75 @@ class OrderProducer:
         logger.info(f"Producer initialized. Broker: {KAFKA_BOOTSTRAP_SERVERS}")
         logger.info(f"Schema Registry: {SCHEMA_REGISTRY_URL}")
     
+    def delivery_report(self, err, msg):
+        if err is not None:
+            logger.error(f'Message delivery failed: {err}')
+        else:
+            logger.info(
+                f'Message delivered to {msg.topic()} '
+                f'[partition {msg.partition()}] at offset {msg.offset()}'
+            )
     
+    def generate_order(self, order_id: int) -> Dict[str, Any]:
+        products = ['Laptop', 'Smartphone', 'Tablet', 'Headphones', 'Monitor', 
+                   'Keyboard', 'Mouse', 'Webcam', 'Smartwatch', 'Speaker']
+        
+        order = {
+            'orderId': str(order_id),
+            'product': random.choice(products),
+            'price': round(random.uniform(10.0, 2000.0), 2)
+        }
+        
+        return order
+    
+    def produce_order(self, order: Dict[str, Any]):
+        try:
+            serialization_context = SerializationContext(
+                self.topic,
+                MessageField.VALUE
+            )
+            
+            serialized_value = self.avro_serializer(
+                order,
+                serialization_context
+            )
+            
+            self.producer.produce(
+                topic=self.topic,
+                key=order['orderId'].encode('utf-8'),
+                value=serialized_value,
+                on_delivery=self.delivery_report
+            )
+            
+            self.producer.poll(0)
+            
+            logger.debug(f"Produced order: {order}")
+            
+        except Exception as e:
+            logger.error(f"Failed to produce order {order['orderId']}: {e}")
+            raise
+    
+    def run(self, num_messages: int = 100, delay_seconds: float = 1.0):
+        logger.info(f"Starting to produce {num_messages} orders to topic '{self.topic}'")
+        
+        try:
+            for i in range(1, num_messages + 1):
+                order = self.generate_order(i)
+                self.produce_order(order)
+                
+                if i % 10 == 0:
+                    logger.info(f"Produced {i}/{num_messages} orders")
+                
+                time.sleep(delay_seconds)
+            
+            logger.info("Flushing remaining messages...")
+            self.producer.flush()
+            logger.info(f"Successfully produced {num_messages} orders")
+            
+        except KeyboardInterrupt:
+            logger.warning("Producer interrupted by user")
+        except Exception as e:
+            logger.error(f"Producer error: {e}")
+            raise
+        finally:
+            self.producer.flush()
