@@ -121,3 +121,21 @@ class OrderProducer:
             raise
         finally:
             self.producer.flush()
+
+
+def main():
+    try:
+        producer = OrderProducer()
+        
+        num_messages = int(sys.argv[1]) if len(sys.argv) > 1 else 100
+        delay = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
+        
+        producer.run(num_messages=num_messages, delay_seconds=delay)
+        
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
