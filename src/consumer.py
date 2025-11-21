@@ -42,4 +42,45 @@ class PriceAggregator:
             'running_average': round(self.running_average, 2)
         }
 
-
+class OrderConsumer:
+    def __init__(self):
+        self.orders_topic = ORDERS_TOPIC
+        self.dlq_topic = DLQ_TOPIC
+        
+        with open(SCHEMA_PATH, 'r') as f:
+            self.schema_str = f.read()
+        
+        schema_registry_conf = {'url': SCHEMA_REGISTRY_URL}
+        self.schema_registry_client = SchemaRegistryClient(schema_registry_conf)
+        
+        self.avro_deserializer = AvroDeserializer(
+            self.schema_registry_client,
+            self.schema_str,
+            lambda obj, ctx: obj
+        )
+        
+        consumer_conf = {
+            'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+            'group.id': CONSUMER_GROUP_ID,
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,  # Manual commit for better control
+            'max.poll.interval.ms': 300000,
+            'session.timeout.ms': 10000
+        }
+        
+        self.consumer = Consumer(consumer_conf)
+        
+        dlq_producer_conf = {
+            'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+            'client.id': 'order-consumer-dlq-producer'
+        }
+        self.dlq_producer = Producer(dlq_producer_conf)
+        
+        self.aggregator = PriceAggregator()
+        
+        self.retry_counts: Dict[str, int] = {}
+        
+        logger.info(f"Consumer initialized. Group ID: {CONSUMER_GROUP_ID}")
+        logger.info(f"Subscribing to topic: {self.orders_topic}")
+    
+    
