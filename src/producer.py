@@ -42,7 +42,8 @@ class OrderProducer:
             'acks': 'all',
             'retries': 3,
             'max.in.flight.requests.per.connection': 1,
-            'compression.type': 'snappy'
+            'compression.type': 'snappy',
+            'partitioner': 'murmur2_random'
         }
         
         self.producer = Producer(producer_conf)
