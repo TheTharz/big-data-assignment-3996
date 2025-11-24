@@ -41,6 +41,7 @@ python src/producer.py 100 1
 6. **Run consumer:**
 ```bash
 python src/consumer.py
+python src/dlq_consumer.py
 ```
 
 7. **View Kafka UI:** http://localhost:8080
